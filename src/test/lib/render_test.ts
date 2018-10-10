@@ -12,7 +12,7 @@
  * http://polymer.github.io/PATENTS.txt
  */
 
-import {AttributePart, directive, html, NodePart, render, svg, templateFactory} from '../../lit-html.js';
+import {AttributePart, Directive, html, NodePart, Part, render, svg, templateFactory} from '../../lit-html.js';
 import {stripExpressionMarkers} from '../test-utils/strip-markers.js';
 
 const assert = chai.assert;
@@ -688,45 +688,62 @@ suite('render()', () => {
   });
 
   suite('directives', () => {
-    test('renders directives on NodeParts', () => {
-      const fooDirective = directive((part: NodePart) => {
-        part.setValue('foo');
-      });
+    const testDirective = () => new TestDirective();
+    class TestDirective extends Directive {
+      constructor() {
+        super(testDirective, []);
+      }
+      commit(part: Part) {
+        part.setValue('test');
+      }
+    }
 
-      render(html`<div>${fooDirective}</div>`, container);
+    test('renders directives on NodeParts', () => {
+      render(html`<div>${testDirective()}</div>`, container);
       assert.equal(
-          stripExpressionMarkers(container.innerHTML), '<div>foo</div>');
+          stripExpressionMarkers(container.innerHTML), '<div>test</div>');
     });
 
     test('renders directives on AttributeParts', () => {
-      const fooDirective = directive((part: AttributePart) => {
-        part.setValue('foo');
-      });
-
-      render(html`<div foo="${fooDirective}"></div>`, container);
+      render(html`<div foo="${testDirective()}"></div>`, container);
       assert.equal(
-          stripExpressionMarkers(container.innerHTML), '<div foo="foo"></div>');
+          stripExpressionMarkers(container.innerHTML),
+          '<div foo="test"></div>');
+    });
+
+    test('renders directives on PropertyParts', () => {
+      render(html`<div .foo="${testDirective()}"></div>`, container);
+      assert.equal(stripExpressionMarkers(container.innerHTML), '<div></div>');
+      assert.strictEqual((container.firstElementChild as any).foo, 'test');
     });
 
     testSkipChrome41(
         'event listeners can see events fired by dynamic children', () => {
-          // This tests that node directives are called in the commit phase, not
-          // the setValue phase
+          // This tests that node directives are called in the commit
+          // phase, not the setValue phase
           let event: Event|undefined = undefined;
+          const fire = () => new FireDirective();
+          class FireDirective extends Directive {
+            constructor() {
+              super(fire, []);
+            }
+            commit(part: NodePart) {
+              // This emulates a custom element that fires an event in
+              // its connectedCallback
+              part.startNode.dispatchEvent(new CustomEvent('test-event', {
+                bubbles: true,
+              }));
+            }
+          }
+
           document.body.appendChild(container);
           render(
               html`
-        <div @test-event=${(e: Event) => {
+          <div @test-event=${(e: Event) => {
                 event = e;
               }}>
-          ${directive((part: NodePart) => {
-                // This emulates a custom element that fires an event in its
-                // connectedCallback
-                part.startNode.dispatchEvent(new CustomEvent('test-event', {
-                  bubbles: true,
-                }));
-              })}
-        </div>`,
+            ${fire()}
+          </div>`,
               container);
           document.body.removeChild(container);
           assert.isOk(event);
@@ -738,29 +755,26 @@ suite('render()', () => {
           // This tests that attribute directives are called in the commit
           // phase, not the setValue phase
           let event = undefined;
-          const fire = directive((part: AttributePart) => {
-            part.committer.element.dispatchEvent(new CustomEvent('test-event', {
-              bubbles: true,
-            }));
-          });
+          const fire = () => new FireDirective();
+          class FireDirective extends Directive {
+            constructor() {
+              super(fire, []);
+            }
+            commit(part: AttributePart) {
+              part.committer.element.dispatchEvent(
+                  new CustomEvent('test-event', {
+                    bubbles: true,
+                  }));
+            }
+          }
 
           render(
               html`<div @test-event=${(e: Event) => {
                 event = e;
-              }} b=${fire}></div>`,
+              }} b=${fire()}></div>`,
               container);
           assert.isOk(event);
         });
-
-    test('renders directives on PropertyParts', () => {
-      const fooDirective = directive((part: AttributePart) => {
-        part.setValue(1234);
-      });
-
-      render(html`<div .foo="${fooDirective}"></div>`, container);
-      assert.equal(stripExpressionMarkers(container.innerHTML), '<div></div>');
-      assert.strictEqual((container.firstElementChild as any).foo, 1234);
-    });
   });
 
   suite('<table>', () => {

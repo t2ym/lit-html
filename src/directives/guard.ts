@@ -12,7 +12,7 @@
  * http://polymer.github.io/PATENTS.txt
  */
 
-import {directive, Directive, NodePart} from '../lit-html.js';
+import {Directive, NodePart} from '../lit-html.js';
 
 const previousExpressions = new WeakMap<NodePart, any>();
 
@@ -35,14 +35,26 @@ const previousExpressions = new WeakMap<NodePart, any>();
  * @param expression the expression to check before re-rendering
  * @param valueFn function which returns the render value
  */
-export const guard =
-    (expression: any, valueFn: () => any): Directive<NodePart> =>
-        directive((part: NodePart): void => {
-          // Dirty check previous expression
-          if (previousExpressions.get(part) === expression) {
-            return;
-          }
+export const guard = (expression: any, valueFn: () => any) =>
+    new GuardDirective(expression, valueFn);
 
-          part.setValue(valueFn());
-          previousExpressions.set(part, expression);
-        });
+class GuardDirective extends Directive {
+  expression: any;
+  valueFn: () => any;
+
+  constructor(expression: any, valueFn: () => any) {
+    super(guard, [expression, valueFn]);
+    this.expression = expression;
+    this.valueFn = valueFn;
+  }
+
+  commit(part: NodePart) {
+    // Dirty check previous expression
+    if (previousExpressions.get(part) === this.expression) {
+      return;
+    }
+
+    part.setValue(this.valueFn());
+    previousExpressions.set(part, this.expression);
+  }
+}

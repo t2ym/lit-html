@@ -12,8 +12,7 @@
  * http://polymer.github.io/PATENTS.txt
  */
 
-import {AttributePart, directive, Directive, PropertyPart} from '../lit-html.js';
-
+import {AttributePart, Directive, PropertyPart} from '../lit-html.js';
 
 // On IE11, classList.toggle doesn't accept a second argument.
 // Since this is so minor, we just polyfill it.
@@ -57,34 +56,45 @@ const classMapStatics = new WeakMap();
  * `{foo: bar}` applies the class `foo` if the value of `bar` is truthy.
  * @param classInfo {ClassInfo}
  */
-export const classMap = (classInfo: ClassInfo): Directive<AttributePart> =>
-    directive((part: AttributePart) => {
-      if (!(part instanceof AttributePart) || (part instanceof PropertyPart) ||
-          part.committer.name !== 'class' || part.committer.parts.length > 1) {
-        throw new Error(
-            'The `classMap` directive must be used in the `class` attribute ' +
-            'and must be the only part in the attribute.');
+export const classMap = (classInfo: ClassInfo): Directive =>
+    new ClassMapDirective(classInfo);
+
+class ClassMapDirective extends Directive {
+  classInfo: ClassInfo;
+
+  constructor(classInfo: ClassInfo) {
+    super(classMap, [classInfo]);
+    this.classInfo = classInfo;
+  }
+
+  commit(part: AttributePart) {
+    if (!(part instanceof AttributePart) || (part instanceof PropertyPart) ||
+        part.committer.name !== 'class' || part.committer.parts.length > 1) {
+      throw new Error(
+          'The `classMap` directive must be used in the `class` attribute ' +
+          'and must be the only part in the attribute.');
+    }
+    // handle static classes
+    if (!classMapStatics.has(part)) {
+      part.committer.element.className = part.committer.strings.join(' ');
+      classMapStatics.set(part, true);
+    }
+    // remove old classes that no longer apply
+    const oldInfo = classMapCache.get(part);
+    for (const name in oldInfo) {
+      if (!(name in this.classInfo)) {
+        part.committer.element.classList.remove(name);
       }
-      // handle static classes
-      if (!classMapStatics.has(part)) {
-        part.committer.element.className = part.committer.strings.join(' ');
-        classMapStatics.set(part, true);
+    }
+    // add new classes
+    for (const name in this.classInfo) {
+      if (!oldInfo || (oldInfo[name] !== this.classInfo[name])) {
+        // We explicitly want a loose truthy check here because
+        // it seems more convenient that '' and 0 are skipped.
+        part.committer.element.classList.toggle(
+            name, Boolean(this.classInfo[name]));
       }
-      // remove old classes that no longer apply
-      const oldInfo = classMapCache.get(part);
-      for (const name in oldInfo) {
-        if (!(name in classInfo)) {
-          part.committer.element.classList.remove(name);
-        }
-      }
-      // add new classes
-      for (const name in classInfo) {
-        if (!oldInfo || (oldInfo[name] !== classInfo[name])) {
-          // We explicitly want a loose truthy check here because
-          // it seems more convenient that '' and 0 are skipped.
-          part.committer.element.classList.toggle(
-              name, Boolean(classInfo[name]));
-        }
-      }
-      classMapCache.set(part, classInfo);
-    });
+    }
+    classMapCache.set(part, this.classInfo);
+  }
+}

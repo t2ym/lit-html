@@ -14,16 +14,14 @@
 
 import {Part} from './part.js';
 
-const directives = new WeakMap<any, Boolean>();
+export abstract class Directive {
+  readonly type: object;
+  readonly values: unknown[];
 
-export interface Directive<P = Part> {
-  (part: P): void;
+  constructor(type: Function, values: unknown[]) {
+    this.type = type;
+    this.values = values;
+  }
+
+  abstract commit<T>(part: Part, state?: T): T|void;
 }
-
-export const directive = <P = Part>(f: Directive<P>): Directive<P> => {
-  directives.set(f, true);
-  return f;
-};
-
-export const isDirective = (o: any) =>
-    typeof o === 'function' && directives.has(o);

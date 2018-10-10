@@ -12,7 +12,7 @@
  * http://polymer.github.io/PATENTS.txt
  */
 
-import {directive, Directive, isPrimitive, NodePart} from '../lit-html.js';
+import {Directive, isPrimitive, NodePart} from '../lit-html.js';
 
 /**
  * Renders the result as HTML, rather than text.
@@ -22,19 +22,29 @@ import {directive, Directive, isPrimitive, NodePart} from '../lit-html.js';
  * vulnerabilities.
  */
 
-const previousValues = new WeakMap<NodePart, string>();
+const previousValues = new WeakMap<NodePart, unknown>();
 
-export const unsafeHTML = (value: any): Directive<NodePart> =>
-    directive((part: NodePart): void => {
-      // Dirty check primitive values
-      const previousValue = previousValues.get(part);
-      if (previousValue === value && isPrimitive(value)) {
-        return;
-      }
+export const unsafeHTML = (value: unknown) => new UnsafeHTMLDirective(value);
 
-      // Use a <template> to parse HTML into Nodes
-      const tmp = document.createElement('template');
-      tmp.innerHTML = value;
-      part.setValue(document.importNode(tmp.content, true));
-      previousValues.set(part, value);
-    });
+class UnsafeHTMLDirective extends Directive {
+  value: unknown;
+
+  constructor(value: unknown) {
+    super(unsafeHTML, [value]);
+    this.value = value;
+  }
+
+  commit(part: NodePart) {
+    // Dirty check primitive values
+    const previousValue = previousValues.get(part);
+    if (previousValue === this.value && isPrimitive(this.value)) {
+      return;
+    }
+
+    // Use a <template> to parse HTML into Nodes
+    const tmp = document.createElement('template');
+    tmp.innerHTML = String(this.value);
+    part.setValue(document.importNode(tmp.content, true));
+    previousValues.set(part, this.value);
+  }
+}

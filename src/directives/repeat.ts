@@ -12,10 +12,11 @@
  * http://polymer.github.io/PATENTS.txt
  */
 
-import {createMarker, directive, Directive, NodePart, removeNodes, reparentNodes} from '../lit-html.js';
+import {createMarker, Directive, NodePart, removeNodes, reparentNodes} from '../lit-html.js';
 
 export type KeyFn<T> = (item: T, index?: number) => any;
 export type ItemTemplate<T> = (item: T, index?: number) => any;
+
 
 // Helper functions for manipulating parts
 // TODO(kschaaf): Refactor into Part API?
@@ -88,21 +89,35 @@ const keyListCache = new WeakMap<NodePart, unknown[]>();
  */
 export function repeat<T>(
     items: Iterable<T>, keyFn: KeyFn<T>, template: ItemTemplate<T>):
-    Directive<NodePart>;
+    RepeatDirective<T>;
 export function repeat<T>(
-    items: Iterable<T>, template: ItemTemplate<T>): Directive<NodePart>;
+    items: Iterable<T>, template: ItemTemplate<T>): RepeatDirective<T>;
 export function repeat<T>(
     items: Iterable<T>,
     keyFnOrTemplate: KeyFn<T>|ItemTemplate<T>,
-    template?: ItemTemplate<T>): Directive<NodePart> {
+    template?: ItemTemplate<T>): RepeatDirective<T> {
   let keyFn: KeyFn<T>;
   if (arguments.length === 2) {
     template = keyFnOrTemplate;
   } else if (arguments.length === 3) {
     keyFn = keyFnOrTemplate as KeyFn<T>;
   }
+  return new RepeatDirective(items, keyFn!, template !);
+}
 
-  return directive((containerPart: NodePart): void => {
+class RepeatDirective<T> extends Directive {
+  items: Iterable<T>;
+  keyFn: KeyFn<T>;
+  template: ItemTemplate<T>;
+
+  constructor(items: Iterable<T>, keyFn: KeyFn<T>, template: ItemTemplate<T>) {
+    super(repeat, [items, keyFn, template]);
+    this.items = items;
+    this.keyFn = keyFn;
+    this.template = template;
+  }
+
+  commit(containerPart: NodePart) {
     // Old part & key lists are retrieved from the last update (associated with
     // the part for this instance of the directive)
     const oldParts = partListCache.get(containerPart) || [];
@@ -118,9 +133,9 @@ export function repeat<T>(
     const newValues: unknown[] = [];
     const newKeys: unknown[] = [];
     let index = 0;
-    for (const item of items) {
-      newKeys[index] = keyFn ? keyFn(item, index) : index;
-      newValues[index] = template !(item, index);
+    for (const item of this.items) {
+      newKeys[index] = this.keyFn ? this.keyFn(item, index) : index;
+      newValues[index] = this.template !(item, index);
       index++;
     }
 
@@ -396,5 +411,5 @@ export function repeat<T>(
     // Save order of new parts for next round
     partListCache.set(containerPart, newParts);
     keyListCache.set(containerPart, newKeys);
-  });
+  }
 }

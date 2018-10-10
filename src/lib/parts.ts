@@ -12,7 +12,7 @@
  * http://polymer.github.io/PATENTS.txt
  */
 
-import {isDirective} from './directive.js';
+import {Directive} from './directive.js';
 import {removeNodes} from './dom.js';
 import {noChange, Part} from './part.js';
 import {RenderOptions} from './render-options.js';
@@ -99,17 +99,17 @@ export class AttributePart implements Part {
       // If the value is a not a directive, dirty the committer so that it'll
       // call setAttribute. If the value is a directive, it'll dirty the
       // committer if it calls setValue().
-      if (!isDirective(value)) {
+      if (!(value instanceof Directive)) {
         this.committer.dirty = true;
       }
     }
   }
 
   commit() {
-    while (isDirective(this.value)) {
+    while (this.value instanceof Directive) {
       const directive = this.value;
       this.value = noChange;
-      directive(this);
+      directive.commit(this);
     }
     if (this.value === noChange) {
       return;
@@ -177,10 +177,10 @@ export class NodePart implements Part {
   }
 
   commit() {
-    while (isDirective(this._pendingValue)) {
+    while (this._pendingValue instanceof Directive) {
       const directive = this._pendingValue;
       this._pendingValue = noChange;
-      directive(this);
+      directive.commit(this);
     }
     const value = this._pendingValue;
     if (value === noChange) {
@@ -344,10 +344,10 @@ export class BooleanAttributePart implements Part {
   }
 
   commit() {
-    while (isDirective(this._pendingValue)) {
+    while (this._pendingValue instanceof Directive) {
       const directive = this._pendingValue;
       this._pendingValue = noChange;
-      directive(this);
+      directive.commit(this);
     }
     if (this._pendingValue === noChange) {
       return;
@@ -449,10 +449,10 @@ export class EventPart implements Part {
   }
 
   commit() {
-    while (isDirective(this._pendingValue)) {
+    while (this._pendingValue instanceof Directive) {
       const directive = this._pendingValue;
       this._pendingValue = noChange;
-      directive(this);
+      directive.commit(this);
     }
     if (this._pendingValue === noChange) {
       return;

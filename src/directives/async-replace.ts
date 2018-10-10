@@ -12,7 +12,7 @@
  * http://polymer.github.io/PATENTS.txt
  */
 
-import {directive, Directive, NodePart} from '../lit-html.js';
+import {Directive, NodePart} from '../lit-html.js';
 
 /**
  * A directive that renders the items of an async iterable[1], replacing
@@ -34,44 +34,63 @@ import {directive, Directive, NodePart} from '../lit-html.js';
  */
 export const asyncReplace =
     <T>(value: AsyncIterable<T>, mapper?: (v: T, index?: number) => any):
-        Directive<NodePart> => directive(async (part: NodePart) => {
-          // If we've already set up this particular iterable, we don't need
-          // to do anything.
-          if (value === part.value) {
-            return;
-          }
+        Directive => new AsyncReplaceDirective(value, mapper);
 
-          // We nest a new part to keep track of previous item values separately
-          // of the iterable as a value itself.
-          const itemPart = new NodePart(part.options);
-          part.value = value;
+class AsyncReplaceDirective<T> extends Directive {
+  value: AsyncIterable<T>;
+  mapper?: (v: T, index?: number) => any;
 
-          let i = 0;
+  constructor(value: AsyncIterable<T>, mapper?: (v: T, index?: number) => any) {
+    super(asyncReplace, [value, mapper]);
+    this.value = value;
+    this.mapper = mapper;
+  }
 
-          for await (let v of value) {
-            // When we get the first value, clear the part. This let's the
-            // previous value display until we can replace it.
-            if (i === 0) {
-              part.clear();
-              itemPart.appendIntoPart(part);
-            }
+  commit(part: NodePart) {
+    if (!(part instanceof NodePart)) {
+      console.error('asyncAppend is only allowed on text expressions');
+      return;
+    }
+    // If we've already set up this particular iterable, we don't need
+    // to do anything.
+    if (this.value === part.value) {
+      return;
+    }
 
-            // Check to make sure that value is the still the current value of
-            // the part, and if not bail because a new value owns this part
-            if (part.value !== value) {
-              break;
-            }
+    // We nest a new part to keep track of previous item values separately
+    // of the iterable as a value itself.
+    const itemPart = new NodePart(part.options);
+    part.value = this.value;
 
-            // As a convenience, because functional-programming-style
-            // transforms of iterables and async iterables requires a library,
-            // we accept a mapper function. This is especially convenient for
-            // rendering a template for each item.
-            if (mapper !== undefined) {
-              v = mapper(v, i);
-            }
+    let i = 0;
 
-            itemPart.setValue(v);
-            itemPart.commit();
-            i++;
-          }
-        });
+    (async () => {
+      for await (let v of this.value) {
+        // When we get the first value, clear the part. This let's the
+        // previous value display until we can replace it.
+        if (i === 0) {
+          part.clear();
+          itemPart.appendIntoPart(part);
+        }
+
+        // Check to make sure that value is the still the current value of
+        // the part, and if not bail because a new value owns this part
+        if (part.value !== this.value) {
+          break;
+        }
+
+        // As a convenience, because functional-programming-style
+        // transforms of iterables and async iterables requires a library,
+        // we accept a mapper function. This is especially convenient for
+        // rendering a template for each item.
+        if (this.mapper !== undefined) {
+          v = this.mapper(v, i);
+        }
+
+        itemPart.setValue(v);
+        itemPart.commit();
+        i++;
+      }
+    })();
+  }
+}
