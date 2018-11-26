@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## Unreleased
 ### Added
 * Added `async()` directve as a more general replacement for `until()`. ([#555](https://github.com/Polymer/lit-html/pull/555))
+* Added `runAsync()` directve to run async tasks and render templates based on the task state. ([#657](https://github.com/Polymer/lit-html/pull/657))
 ### Changed
 * [Breaking] Renamed `classMap.js` and `styleMap.js` files to kebab-case. ([#644](https://github.com/Polymer/lit-html/pull/644))
 ### Removed
