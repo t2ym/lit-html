@@ -258,6 +258,7 @@ lit-html includes a few built-in directives.
 *   [`ifDefined`](#ifdefined)
 *   [`guard`](#guard)
 *   [`async`](#async)
+*   [`runAsync`](#runasync)
 *   [`asyncAppend` and `asyncReplace`](#asyncappend-and-asyncreplace)
 
 **Directives may change.** The exact list of directives included with lit-html, and the API of the directives may be subject to change before lit-html 1.0 is released.
@@ -352,6 +353,34 @@ import { async } from 'lit-html/directives/async.js';
 const content = fetch('./content.txt').then(r => r.text());
 
 html`${async(content, html`<span>Loading...</span>`)}`
+```
+
+### runAsync
+
+`runAsync(key, task, templates)`
+
+Runs an async function whenever the key changes, and calls one of several
+lit-html template functions depending on the state of the async call:
+
+ - success() is called when the result of the function resolves.
+ - pending() is called immediately
+ - initial() is called if the function rejects with a InitialStateError,
+   which lets the function indicate that it couldn't proceed with the
+   provided key. This is usually the case when there isn't data to load.
+ - failure() is called if the function rejects.
+
+Example:
+
+```js
+import { runAsync } from 'lit-html/directives/run-async.js';
+
+const template(url) => html`${
+  runAsync(url, (url) => fetch(url).then((r) => r.text()), {
+    success: (content) => html`Success: ${content}`,
+    pending: () => 'Pending',
+    initial: () => `Initial`,
+    failure: (e: Error) => `Error: ${e.message}`
+  })}`
 ```
 
 ### asyncAppend and asyncReplace
