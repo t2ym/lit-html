@@ -6,6 +6,8 @@
 /tools/node_modules/
 /tools/lib/
 
+/build/
+
 # Compiler output
 /lit-html.d.ts
 /lit-html.d.ts.map

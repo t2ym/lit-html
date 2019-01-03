@@ -1,0 +1,12 @@
+{
+  "model": {
+    "target": {
+      "i18n-target-attr": "ja I18N target attribute value"
+    }
+  },
+  "target": [
+    "ja 時刻: {1}:{2}",
+    "{{parts.0}}",
+    "{{parts.1}}"
+  ]
+}
