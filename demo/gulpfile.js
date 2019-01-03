@@ -226,7 +226,8 @@ function traverseAst(ast, templates) {
     }
   }
   if (inClass) {
-    //console.log(`exiting class ${templates._classes.pop()}`);
+    templates._classes.pop();
+    //console.log(`exiting class ${}`);
   }
 }
 
