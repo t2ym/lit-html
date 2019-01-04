@@ -405,9 +405,10 @@ function preprocessHtmlTemplates(code) {
   };
   try {
     targetAst = espree.parse(code, espreeModuleOptionsFull);
+    let licenseComments = targetAst.comments.map(comment => comment.type === 'Block' ? '/*' + comment.value + '*/' : '//' + comment.value).filter(comment => comment.indexOf('@license') >= 0);
     //console.log(JSONstringify(targetAst, null, 2));
     traverseAst(targetAst, templates);
-    preprocessed = escodegen.generate(targetAst, compact ? escodegenOptionsCompact : escodegenOptions);
+    preprocessed = licenseComments.join('\n') + '\n' + escodegen.generate(targetAst, compact ? escodegenOptionsCompact : escodegenOptions);
     if (!preprocessed.endsWith('\n')) {
       preprocessed += '\n';
     }
