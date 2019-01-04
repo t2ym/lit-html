@@ -154,6 +154,10 @@ export const i18n = (base) => class I18nBaseElement extends mixinMethods(Mixin, 
     }
   }
 
+  _setText(name, bundle) {
+    BehaviorsStore.I18nControllerBehavior.properties.masterBundles.value[''][name] = bundle;
+  }
+
   getBoundElement(name, meta) {
     let boundElement = boundElements.get(name);
     if (!boundElement) {
@@ -287,6 +291,8 @@ export const i18n = (base) => class I18nBaseElement extends mixinMethods(Mixin, 
  */
 export const html = (strings, ...parts) => {
   let name, meta, element;
+  let preprocessedStrings = [];
+  let preprocessedParts = [];
   let originalHtml = '';
   if (strings.length !== parts.length + 1) {
     throw new Error(`html: strings.length (= ${strings.length}) !== parts.length (= ${parts.length}) + 1`);
@@ -297,6 +303,16 @@ export const html = (strings, ...parts) => {
     meta = parts[0].meta;
     element = parts[0].element;
     offset++;
+  }
+  else if (strings.length > 0 && strings[0] === '<!-- localizable -->' && parts[0] instanceof BindingBase) {
+    name = parts[0].name;
+    meta = parts[0].meta;
+    element = parts[0].element;
+    offset++;
+    strings.shift();
+    parts.shift();
+    //console.log('html: rendering preprocessed HTML template for ' + name);
+    return litHtml(strings, ...parts); // preprocessed HTML template
   }
   else {
     return litHtml(strings, ...parts); // no I18N
@@ -357,8 +373,6 @@ export const html = (strings, ...parts) => {
     element._processTasks();
   }
   // TODO: cache preprocessedStrings and preprocessedParts as well
-  let preprocessedStrings = [];
-  let preprocessedParts = [];
   let index;
   let partIndex = 0;
   let text = element.getText(name, meta);
@@ -518,17 +532,58 @@ class ElementNameBinding extends BindingBase {
  * @param target (Tag name of) target element instance
  * @param meta import.meta for the module. Optional if target is an element. Mandatory if target is a name
  */
-export const bind = (target, meta) => {
-  if (target instanceof HTMLElement && target.constructor.isI18n) {
-    if (!meta) {
-      return new ElementBinding(target); // meta is unused
-    }
-    else {
-      return new ElementNameBinding(target, meta);
-    }
+export const bind = function (target, meta) {
+  let partsGenerator;
+  let localizableText;
+  let binding;
+  if (target instanceof BindingBase && typeof arguments[1] === 'function' && typeof arguments[2] === 'object') {
+    // bind(('name', binding), (_bind, text, model, effectiveLang) => [], {})
+    binding = target;
+    partsGenerator = arguments[1];
+    localizableText = arguments[2];
   }
-  if (typeof target === 'string' && meta && typeof meta === 'object') {
-    return new NameBinding(target, meta);
+  else if (typeof target === 'string' && typeof meta === 'object' && typeof arguments[2] === 'function' && typeof arguments[3] === 'object') {
+    // bind('name', import.meta, (_bind, text, model, effectiveLang) => [], {})
+    binding = new NameBinding(target, meta);
+    partsGenerator = arguments[2];
+    localizableText = arguments[3];
   }
-  return new BindingBase();
+  else if (target instanceof HTMLElement && target.constructor.isI18n && typeof arguments[1] === 'string' && typeof arguments[2] === 'function' && typeof arguments[3] === 'object') {
+    // bind(this, 'name', (_bind, text, model, effectiveLang) => [], {})
+    binding = new ElementNameBinding(target, arguments[1]);
+    partsGenerator = arguments[2];
+    localizableText = arguments[3];
+  }
+  else if (target instanceof HTMLElement && target.constructor.isI18n && typeof arguments[1] === 'function' && typeof arguments[2] === 'object') {
+    // bind(this, (_bind, text, model, effectiveLang) => [], {})
+    binding = new ElementBinding(target);
+    partsGenerator = arguments[1];
+    localizableText = arguments[2];
+  }
+  if (binding) {
+    // Preprocessed
+    if (!BehaviorsStore.I18nControllerBehavior.properties.masterBundles.value[''][binding.name]) {
+      binding.element._setText(binding.name, localizableText);
+    }
+    let text = binding.element.getText(binding.name, binding.meta);
+    if (!binding.element.effectiveLang) {
+      text = localizableText; // fallback at the initial rendering
+    }
+    return partsGenerator(binding, text, text.model, binding.element.effectiveLang || binding.element.lang);
+  }
+  else {
+    // Not preprocessed
+    if (target instanceof HTMLElement && target.constructor.isI18n) {
+      if (!meta) {
+        return new ElementBinding(target); // meta is unused
+      }
+      else {
+        return new ElementNameBinding(target, meta);
+      }
+    }
+    if (typeof target === 'string' && meta && typeof meta === 'object') {
+      return new NameBinding(target, meta);
+    }
+    return new BindingBase();
+  }
 }

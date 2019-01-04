@@ -1,6 +1,6 @@
 {
   "name": "lit-html",
-  "version": "1.0.0-rc.1-i18n.7.1",
+  "version": "1.0.0-rc.1-i18n.8",
   "description": "HTML template literals in JavaScript",
   "license": "BSD-3-Clause",
   "repository": "Polymer/lit-html",
@@ -38,7 +38,8 @@
     "chai": "^4.1.2",
     "clang-format": "^1.2.4",
     "del": "^2.2.2",
-    "espree": "github:t2ym/espree#master",
+    "escodegen": "github:t2ym/escodegen#es2018",
+    "espree": "github:t2ym/espree#es2018",
     "gulp": "^3.9.1",
     "gulp-babel": "^6.1.2",
     "gulp-crisper": "^1.0.0",

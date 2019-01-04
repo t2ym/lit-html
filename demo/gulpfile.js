@@ -27,6 +27,7 @@ const i18nLeverage = require('gulp-i18n-leverage');
 const XliffConv = require('xliff-conv');
 const i18nAddLocales = require('gulp-i18n-add-locales');
 const espree = require('espree');
+const escodegen = require('escodegen');
 
 //const logging = require('plylog');
 const mergeStream = require('merge-stream');
@@ -89,6 +90,20 @@ const espreeModuleOptionsFull = {
     experimentalObjectRestSpread: true
   }
 };
+const escodegenOptions = {
+  format: {
+    indent: {
+      style: '  '
+    },
+  },
+  comment: true
+};
+const escodegenOptionsCompact = {
+  format: {
+    compact: true
+  },
+  comment: false
+};
 
 function UncamelCase (name) {
   return name
@@ -120,6 +135,7 @@ function traverseAst(ast, templates) {
     {
       let tag;
       let name;
+      let bindingType;
       //console.log('TaggedTemplateExpression:');
       if (ast.tag.type === 'Identifier') {
         tag = ast.tag.name;
@@ -133,6 +149,7 @@ function traverseAst(ast, templates) {
             if (ast.quasi.expressions[0].expressions.length > 0 && ast.quasi.expressions[0].expressions[0].type === 'Literal' &&
                 typeof ast.quasi.expressions[0].expressions[0].value === 'string' && ast.quasi.expressions[0].expressions[0].value) {
               name = ast.quasi.expressions[0].expressions[0].value;
+              bindingType = 'LiteralNameBinding';
               //console.log(`Literal ${ast.quasi.expressions[0].expressions[0].value} in the first expression in the first part`);
             }
             break;
@@ -142,6 +159,7 @@ function traverseAst(ast, templates) {
                 if (ast.quasi.expressions[0].arguments[0].type === 'ThisExpression') {
                   if (templates._classes.length > 0) {
                     name = UncamelCase(templates._classes[templates._classes.length - 1]);
+                    bindingType = 'ElementBinding';
                     //console.log('html`${bind(this)}... for ' + name + ' in class ' + templates._classes[templates._classes.length - 1]);
                   }
                   else {
@@ -154,11 +172,13 @@ function traverseAst(ast, templates) {
                     ast.quasi.expressions[0].arguments[1].type === 'Literal' &&
                     typeof ast.quasi.expressions[0].arguments[1].value === 'string' && ast.quasi.expressions[0].arguments[1].value) {
                   name = ast.quasi.expressions[0].arguments[1].value;
+                  bindingType = 'ElementNameBinding';
                   //console.log('html`${bind(this,\'' + name + '\')}... in the first expression in the first part');
                 }
                 else if (ast.quasi.expressions[0].arguments[0].type === 'Literal' &&
                          typeof ast.quasi.expressions[0].arguments[0].value === 'string' && ast.quasi.expressions[0].arguments[0].value) {
                   name = ast.quasi.expressions[0].arguments[0].value;
+                  bindingType = 'NameBinding';
                   //console.log('html`${bind(\'' + name + '\',...)}... in the first expression in the first part');
                 }
               }
@@ -201,6 +221,127 @@ function traverseAst(ast, templates) {
             templates.anonymous = templates.anonymous || [];
             templates.anonymous.push(template);
             //console.log(`template['anonymous'] = \`${template}\``);
+          }
+
+          if (name && templates._preprocess && templates.preprocessed[name]) {
+            console.log(`preprocessJs: preprocessing HTML template for ${name}`);
+            let preprocessedTemplate = templates.preprocessed[name].preprocessed;
+            let localizableTextPrefix = '<template id="localizable-text">\n<json-data>\n';
+            let localizableTextPostfix = '</json-data>\n</template>\n';
+            let indexOfLocalizableText = preprocessedTemplate.indexOf(localizableTextPrefix);
+            let indexOfLocalizableTextPostfix = preprocessedTemplate.indexOf(localizableTextPostfix, indexOfLocalizableText);
+            let localizableTextJSON = preprocessedTemplate.substring(indexOfLocalizableText + localizableTextPrefix.length, indexOfLocalizableTextPostfix);
+            let strippedTemplate = preprocessedTemplate.substring(0, indexOfLocalizableText);
+            let strings = [{
+              "type": "Literal",
+              "value": "<!-- localizable -->",
+            }];
+            let parts = [{
+              "type": "Identifier",
+              "name": "_bind",
+            }];
+            let index;
+            //console.log(`${name} stripped=${strippedTemplate} localizable-text=${localizableTextJSON}`);
+            while ((index = strippedTemplate.indexOf('{{')) >= 0) {
+              let preprocessedString;
+              if (index > 3 && strippedTemplate.substring(index - 3, index) === '$="') {
+                // convert Polymer template syntax
+                preprocessedString = strippedTemplate.substring(0, index - 3) + '="';
+              }
+              else {
+                preprocessedString = strippedTemplate.substring(0, index);
+              }
+              strippedTemplate = strippedTemplate.substring(index);
+              index = strippedTemplate.indexOf('}}');
+              if (index < 0) {
+                throw new Error('html: no matching }} for {{');
+              }
+              let part = strippedTemplate.substring(0, index + 2);
+              strippedTemplate = strippedTemplate.substring(index + 2);
+              let partMatch = part.match(/^{{parts[.]([0-9]*)}}$/);
+              strings.push({
+                "type": "Literal",
+                "value": preprocessedString,
+              });
+              if (partMatch) {
+                parts.push(ast.quasi.expressions[parseInt(partMatch[1]) + offset]);
+              }
+              else {
+                let partPath = part.substring(2, part.length - 2).split(/[.]/);
+                let valueExpression = 'text';
+                let tmpPart = partPath.shift();
+                if (tmpPart === 'model') {
+                  valueExpression = 'model';
+                }
+                else if (tmpPart === 'effectiveLang') {
+                  valueExpression = 'effectiveLang';
+                }
+                while (tmpPart = partPath.shift()) {
+                  valueExpression += `["${tmpPart}"]`;
+                }
+                //console.log('html: part ' + part + ' = ' + valueExpression);
+                let valueExpressionAst = espree.parse(valueExpression, espreeModuleOptions).body[0].expression;
+                parts.push(valueExpressionAst);
+              }
+            }
+            strings.push({
+              "type": "Literal",
+              "value": strippedTemplate,
+            });
+
+            let templateCode = ({
+              'LiteralNameBinding': `html([],...bind(('name', binding), (_bind, text, model, effectiveLang) => [], ${localizableTextJSON}));`,
+              'NameBinding': `html([],...bind('name', import.meta, (_bind, text, model, effectiveLang) => [], ${localizableTextJSON}));`,
+              'ElementNameBinding': `html([],...bind(this, 'name', (_bind, text, model, effectiveLang) => [], ${localizableTextJSON}));`,
+              'ElementBinding': `html([],...bind(this, (_bind, text, model, effectiveLang) => [], ${localizableTextJSON}))`,
+            }[bindingType]);
+            /*
+              html(['<!-- localizable -->','<div>','</div><div>','</div>'],
+                ...bind(('get-message', binding), (_bind, text, model, effectiveLang) => [_bind, text.div, getMutatingMessage()], { "meta": {}, "model": {}, "div": "message" }) );
+              html(['<!-- localizable -->','<div>','</div><div>','</div>'],
+                ...bind('get-message', import.meta, (_bind, text, model, effectiveLang) => [_bind, text.div, getMutatingMessage()], { "meta": {}, "model": {}, "div": "message" }) );
+              html(['<!-- localizable -->','<div>','</div><div>','</div>'],
+                ...bind(this, 'get-message', (_bind, text, model, effectiveLang) => [_bind, text.div, getMutatingMessage()], { "meta": {}, "model": {}, "div": "message" }) );
+              html(['<!-- localizable -->','<div>','</div><div>','</div>'],
+                ...bind(this, (_bind, text, model, effectiveLang) => [_bind, text.div, getMutatingMessage()], { "meta": {}, "model": {}, "div": "message" }) );
+            */
+            if (templateCode) {
+              let templateAst = espree.parse(templateCode, espreeModuleOptions).body[0].expression;
+              templateAst.arguments[0].elements = strings;
+              switch (bindingType) {
+              case 'LiteralNameBinding':
+                templateAst.arguments[1].argument.arguments[0] = ast.quasi.expressions[0];
+                templateAst.arguments[1].argument.arguments[1].body.elements = parts;
+                break;
+              case 'NameBinding':
+                templateAst.arguments[1].argument.arguments[0] = ast.quasi.expressions[0].arguments[0];
+                templateAst.arguments[1].argument.arguments[1] = ast.quasi.expressions[0].arguments[1];
+                templateAst.arguments[1].argument.arguments[2].body.elements = parts;
+                break;
+              case 'ElementNameBinding':
+                templateAst.arguments[1].argument.arguments[0] = ast.quasi.expressions[0].arguments[0];
+                templateAst.arguments[1].argument.arguments[1] = ast.quasi.expressions[0].arguments[1];
+                templateAst.arguments[1].argument.arguments[2].body.elements = parts;
+                break;
+              case 'ElementBinding':
+                templateAst.arguments[1].argument.arguments[0] = ast.quasi.expressions[0].arguments[0];
+                templateAst.arguments[1].argument.arguments[1].body.elements = parts;
+                break;
+              default:
+                break;
+              }
+              //console.log(JSON.stringify(templateAst, null, 2));
+              //console.log(JSON.stringify(ast, null, 2));
+              ast.type = templateAst.type;
+              ast.callee = templateAst.callee;
+              ast.arguments = templateAst.arguments;
+              delete ast.tag;
+              delete ast.quasi;
+              delete ast.start;
+              delete ast.end;
+              delete ast.loc;
+              delete ast.range;
+            }
           }
         }
       }
@@ -251,6 +392,32 @@ function extractHtmlTemplates(code) {
 
 const extractAnonymousTemplates = false; // true For Polymer 3.0 templates
 
+const compact = false; // for escodegen
+
+// Preprocess HTML templates in JavaScript code
+function preprocessHtmlTemplates(code) {
+  let targetAst;
+  let preprocessed;
+  let templates = {
+    _classes: [],
+    _preprocess: true,
+    preprocessed: preprocessedTemplates,
+  };
+  try {
+    targetAst = espree.parse(code, espreeModuleOptionsFull);
+    //console.log(JSONstringify(targetAst, null, 2));
+    traverseAst(targetAst, templates);
+    preprocessed = escodegen.generate(targetAst, compact ? escodegenOptionsCompact : escodegenOptions);
+    if (!preprocessed.endsWith('\n')) {
+      preprocessed += '\n';
+    }
+  }
+  catch (e) {
+    throw e;
+  }
+  return preprocessed;
+}
+
 var unmodulize = gulpif(['**/*.js'], through.obj(function (file, enc, callback) {
   let htmlTemplate = `<!-- temporary HTML --><encoded-original><link rel="import" href="../../../i18n-element.html"><innerHTML>`;
   let code = stripBom(String(file.contents));
@@ -274,13 +441,13 @@ var unmodulize = gulpif(['**/*.js'], through.obj(function (file, enc, callback) 
           if (atob(original) !== template) {
             console.error('atob(btoa(template)) !== template');
           }
-          html += `<dom-module id="${nameFromPath}"><template>${template.replace(/\\[$]/g, '$')}</template></dom-module>\n`;
+          html += `<dom-module id="${nameFromPath}"><template>${template.replace(/\\[$]/g, '$')}</template></dom-module><!-- end of dom-module id="${nameFromPath}" -->\n`;
           names.push(nameFromPath);
         }
       }
       else {
         // For lit-html templates
-        html += `<dom-module id="${name}"><template>${templates[name].replace(/\\[$]/g, '$')}</template></dom-module>\n`;
+        html += `<dom-module id="${name}"><template>${templates[name].replace(/\\[$]/g, '$')}</template></dom-module><!-- end of dom-module id="${name}" -->\n`;
         names.push(name);
       }      
     }
@@ -367,7 +534,7 @@ var dropDummyHTML = gulpif('**/*.html', through.obj(function (file, enc, callbac
   let code = stripBom(String(file.contents));
   if (code.indexOf(temporaryHTML) >= 0 || file.path.match(/\/index[.]html$/)) {
     let match1 = code.match(/<encoded-original>(.*)<[/]encoded-original>/);
-    let match2 = code.match(/<dom-module id="(.*)"><template localizable-text="embedded">([^`]*)<[/]template><[/]dom-module>/);
+    let match2 = code.match(/<dom-module id="(.*)"><template localizable-text="embedded">([^`]*)<[/]template><[/]dom-module><!-- end of dom-module id="(.*)" -->/);
     if (match1 && match2) {
       let name = match2[1];
       let original = atob(match1[1]);
@@ -377,6 +544,30 @@ var dropDummyHTML = gulpif('**/*.html', through.obj(function (file, enc, callbac
         original: original,
         preprocessed: preprocessed,
       };
+    }
+    else {
+      let names = [];
+      let index = 0;
+      let _code = code;
+      let match;
+      let name;
+      while ((index = _code.indexOf('<dom-module id="')) >= 0) {
+        _code = _code.substring(index);
+        match = _code.match(/^<dom-module id="(.*)"><template localizable-text="embedded">/);
+        if (match) {
+          name = match[1];
+          match = _code.match(new RegExp('^<dom-module id="' + name + '"><template localizable-text="embedded">([^`]*)</template></dom-module><!-- end of dom-module id="' + name + '" -->'));
+          if (match) {
+            let preprocessed = match[1];
+            preprocessedTemplates[name] = {
+              original: '${bind}',
+              preprocessed: preprocessed,
+            };
+            console.log('setting preprocessedTemplates name = ' + name/* + ' preprocessed = ' + preprocessed*/);
+          }
+          _code = _code.substring(_code.indexOf('<!-- end of dom-module id='));
+        }
+      }
     }
     console.log('dropDummyHTML dropping ', file.path);
     callback(null, null);
@@ -388,17 +579,23 @@ var dropDummyHTML = gulpif('**/*.html', through.obj(function (file, enc, callbac
 
 var preprocessJs = gulpif(['**/*.js'], through.obj(function (file, enc, callback) {
   let code = stripBom(String(file.contents));
-  let name = file.path.split('/').pop().replace(/[.]js$/,'');
-  if (preprocessedTemplates[name]) {
-    if (code.indexOf('html`' + preprocessedTemplates[name].original + '`') < 0) {
-      console.error('preprocessJs name = ' + name + ' template not found');
+  let nameFromPath = file.path.split('/').pop().replace(/[.]js$/,'');
+  let preprocessed;
+  if (code.indexOf('html`${') >= 0) {
+    preprocessed = preprocessHtmlTemplates(code);
+    file.contents = Buffer.from(preprocessed);
+  }
+  else if (preprocessedTemplates[nameFromPath] && !preprocessedTemplates[nameFromPath].original.startsWith('${')) {
+    // Polymer 3.0 HTML template
+    if (code.indexOf('html`' + preprocessedTemplates[nameFromPath].original + '`') < 0) {
+      console.error('preprocessJs name = ' + nameFromPath + ' template not found');
     }
-    preprocessedTemplates[name].preprocessed = preprocessedTemplates[name].preprocessed.replace(/\\n/g, '\\\\n').replace(/\\"/g, '\\\\"');
+    preprocessedTemplates[nameFromPath].preprocessed = preprocessedTemplates[nameFromPath].preprocessed.replace(/\\n/g, '\\\\n').replace(/\\"/g, '\\\\"');
     code = code.replace(
-      'html`' + preprocessedTemplates[name].original + '`',
+      'html`' + preprocessedTemplates[nameFromPath].original + '`',
       '((t) => { t.setAttribute("localizable-text", "embedded"); return t; })(html`' + preprocessedTemplates[name].preprocessed + '`)');
     file.contents = Buffer.from(code);
-    console.log('preprocessJs name = ' + name);
+    console.log('preprocessJs name = ' + nameFromPath);
   }
   callback(null, file);
 }));

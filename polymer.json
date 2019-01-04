@@ -1,12 +1,12 @@
 {
-  "entrypoint": "demo/clock/index.html",
-  "shell": "demo/clock/clock.js",
+  "entrypoint": "demo/preprocess/index.html",
+  "shell": "demo/preprocess/clock.js",
   "sources": [
   ],
   "extraDependencies": [
     "node_modules/@webcomponents/webcomponentsjs/**",
-    "demo/clock/locales/**",
-    "demo/clock/*.json"
+    "demo/preprocess/locales/**",
+    "demo/preprocess/*.json"
   ],
   "builds": [
     {

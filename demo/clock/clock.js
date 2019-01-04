@@ -272,7 +272,7 @@ class WorldClockContainer extends i18n(HTMLElement) {
   }
 
   render() {
-    return html`${bind(this, 'world-clock-container')}
+    return html`${bind(this)}
       <style>
         :host {
           display: block;
