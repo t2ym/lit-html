@@ -105,6 +105,7 @@ export const i18n = (base) => class I18nBaseElement extends mixinMethods(Mixin, 
     super();
     this.is = this.constructor.is;
     this.importMeta = this.constructor.importMeta;
+    this.templateDefaultLang = 'en';
     if (!this.__proto__._fetchStatus) {
       this.__proto__._fetchStatus = { // per custom element
         fetchingInstance: null,
@@ -154,8 +155,13 @@ export const i18n = (base) => class I18nBaseElement extends mixinMethods(Mixin, 
     }
   }
 
-  _setText(name, bundle) {
+  _setText(name, bundle, templateLang) {
     BehaviorsStore.I18nControllerBehavior.properties.masterBundles.value[''][name] = bundle;
+    if (templateLang) {
+      BehaviorsStore.I18nControllerBehavior.properties.masterBundles.value[templateLang] =
+        BehaviorsStore.I18nControllerBehavior.properties.masterBundles.value[templateLang] || {};
+      BehaviorsStore.I18nControllerBehavior.properties.masterBundles.value[templateLang][name] = bundle;
+    }
   }
 
   getBoundElement(name, meta) {
@@ -563,7 +569,8 @@ export const bind = function (target, meta) {
   if (binding) {
     // Preprocessed
     if (!BehaviorsStore.I18nControllerBehavior.properties.masterBundles.value[''][binding.name]) {
-      binding.element._setText(binding.name, localizableText);
+      let templateLang = binding.element.templateDefaultLang || BehaviorsStore.I18nControllerBehavior.properties.defaultLang.value || 'en';
+      binding.element._setText(binding.name, localizableText, templateLang);
     }
     let text = binding.element.getText(binding.name, binding.meta);
     if (!binding.element.effectiveLang) {
