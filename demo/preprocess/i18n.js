@@ -135,7 +135,7 @@ export const i18n = (base) => class I18nBaseElement extends mixinMethods(Mixin, 
   }
 
   _updateEffectiveLang(event) {
-    this.effectiveLang = this.lang;
+    this.effectiveLang = this.lang = this.lang || this.templateDefaultLang || BehaviorsStore.I18nControllerBehavior.properties.defaultLang.value || 'en';
   }
 
   get text() {
