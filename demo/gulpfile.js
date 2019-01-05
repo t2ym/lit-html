@@ -341,6 +341,7 @@ function traverseAst(ast, templates) {
               delete ast.end;
               delete ast.loc;
               delete ast.range;
+              templates._transformed.push(name);
             }
           }
         }
@@ -401,6 +402,7 @@ function preprocessHtmlTemplates(code) {
   let templates = {
     _classes: [],
     _preprocess: true,
+    _transformed: [],
     preprocessed: preprocessedTemplates,
   };
   try {
@@ -408,9 +410,15 @@ function preprocessHtmlTemplates(code) {
     let licenseComments = targetAst.comments.map(comment => comment.type === 'Block' ? '/*' + comment.value + '*/' : '//' + comment.value).filter(comment => comment.indexOf('@license') >= 0);
     //console.log(JSONstringify(targetAst, null, 2));
     traverseAst(targetAst, templates);
-    preprocessed = licenseComments.join('\n') + '\n' + escodegen.generate(targetAst, compact ? escodegenOptionsCompact : escodegenOptions);
-    if (!preprocessed.endsWith('\n')) {
-      preprocessed += '\n';
+    if (templates._transformed.length > 0) {
+      preprocessed = licenseComments.join('\n') + '\n' + escodegen.generate(targetAst, compact ? escodegenOptionsCompact : escodegenOptions);
+      if (!preprocessed.endsWith('\n')) {
+        preprocessed += '\n';
+      }
+    }
+    else {
+      // no transformation if unnecessary
+      preprocessed = code;
     }
   }
   catch (e) {
